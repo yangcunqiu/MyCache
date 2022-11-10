@@ -1,4 +1,4 @@
-package core
+package cache
 
 import "container/list"
 
@@ -37,9 +37,24 @@ func (c *Cache) Set(key string, value Value) {
 		// key被使用, 移到到队尾 (list是双向链表, 所以我们约定Front的方向是队尾)
 		c.list.MoveToFront(element)
 		// 链表元素强转为entry
-
+		entry := element.Value.(*entry)
+		// 重新计算已用内存大小
+		c.nowBytes += int64(value.Len()) - int64(entry.value.Len())
+		// 修改value
+		entry.value = value
 	} else {
 		// 新增
+		// 新元素放在链表队尾
+		element := c.list.PushFront(&entry{key: key, value: value})
+		// 保存map
+		c.cache[key] = element
+		// 计算已用内存大小
+		c.nowBytes += int64(len(key)) + int64(value.Len())
+	}
+	// 新增后判断已用内存是否超过最大内存限制
+	if c.maxBytes != 0 && c.nowBytes > c.maxBytes {
+		// 移除最近最少使用 lru
+		c.RemoveOldest()
 	}
 }
 
@@ -72,4 +87,8 @@ func (c *Cache) Get(key string) (value Value, ok bool) {
 	c.list.MoveToFront(element)
 	entry := element.Value.(*entry)
 	return entry.value, true
+}
+
+func (c *Cache) Len() int {
+	return c.list.Len()
 }
