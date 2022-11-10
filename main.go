@@ -1,22 +1,40 @@
 package main
 
 import (
-	"MyCache/cache"
 	"fmt"
 	"log"
 )
 
 func main() {
-	c := cache.New(20, func(key string, value cache.Value) {
-		log.Printf("delete key=%v", key)
-	})
-	c.Set("name1", cache.String("ycq"))
-	c.Set("name2", cache.String("zml"))
-	c.Set("name3", cache.String("zml"))
+	var db = map[string]string{
+		"Tom":  "630",
+		"Jack": "589",
+		"Sam":  "567",
+	}
 
-	value1, ok1 := c.Get("name1")
-	value2, ok2 := c.Get("name2")
-	fmt.Printf("key=%v, ok=%v, value=%v\n", "name1", ok1, value1)
-	fmt.Printf("key=%v, ok=%v, value=%v\n", "name2", ok2, value2)
+	group := New("user", 1024, GetterFunc(func(key string) ([]byte, error) {
+		log.Printf("[db] search %v\n", key)
+		if v, ok := db[key]; ok {
+			return []byte(v), nil
+		}
+		return nil, fmt.Errorf("%s not exist\n", key)
+	}))
 
+	tom1, err := group.Get("Tom")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("key=%v, value=%v\n", "Tom", tom1)
+
+	tom2, err := group.Get("Tom")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("key=%v, value=%v\n", "Tom", tom2)
+
+	sam, err := group.Get("Sam")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("key=%v, value=%v\n", "Sam", sam)
 }
