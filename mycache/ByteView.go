@@ -1,4 +1,4 @@
-package main
+package mycache
 
 // ByteView 抽象了一个只读数据结构 ByteView 用来表示缓存值
 type ByteView struct {
