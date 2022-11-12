@@ -20,8 +20,9 @@ func (f GetterFunc) Get(key string) ([]byte, error) {
 // Group 命名空间, 具有唯一的名字, 负责和用户交互
 type Group struct {
 	name      string
-	getter    Getter // 缓存未命中时获取源数据的回调
-	mainCache cache  // 并发缓存
+	getter    Getter     // 缓存未命中时获取源数据的回调
+	mainCache cache      // 并发缓存
+	peers     PeerPicker // 节点选择器
 }
 
 var (
@@ -64,7 +65,27 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
+func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	bytes, err := peer.Get(g.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{b: bytes}, nil
+}
+
 func (g *Group) load(key string) (ByteView, error) {
+	// 获取远程数据
+	if g.peers != nil {
+		peer, ok := g.peers.PickPeer(key)
+		if ok {
+			byteView, err := g.getFromPeer(peer, key)
+			if err == nil {
+				return byteView, nil
+			}
+			log.Println("[cache] Failed to get from peer", peer)
+		}
+	}
+	// 获取本地数据
 	return g.getLocally(key)
 }
 
@@ -84,4 +105,11 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 
 func (g *Group) populateCache(key string, value ByteView) {
 	g.mainCache.set(key, value)
+}
+
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	if g.peers != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	g.peers = peers
 }
