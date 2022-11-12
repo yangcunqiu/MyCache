@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"mycache/lru"
+	"mycache/singleflight"
 	"sync"
 )
 
@@ -23,6 +24,7 @@ type Group struct {
 	getter    Getter     // 缓存未命中时获取源数据的回调
 	mainCache cache      // 并发缓存
 	peers     PeerPicker // 节点选择器
+	loader    *singleflight.Group
 }
 
 var (
@@ -40,6 +42,7 @@ func New(name string, cacheBytes int64, getter Getter) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes, lru: lru.New(cacheBytes, nil)},
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
 	return g
@@ -74,19 +77,25 @@ func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
 }
 
 func (g *Group) load(key string) (ByteView, error) {
-	// 获取远程数据
-	if g.peers != nil {
-		peer, ok := g.peers.PickPeer(key)
-		if ok {
-			byteView, err := g.getFromPeer(peer, key)
-			if err == nil {
-				return byteView, nil
+	val, err := g.loader.Do(key, func() (interface{}, error) {
+		// 获取远程数据
+		if g.peers != nil {
+			peer, ok := g.peers.PickPeer(key)
+			if ok {
+				byteView, err := g.getFromPeer(peer, key)
+				if err == nil {
+					return byteView, nil
+				}
+				log.Println("[cache] Failed to get from peer", peer)
 			}
-			log.Println("[cache] Failed to get from peer", peer)
 		}
+		// 获取本地数据
+		return g.getLocally(key)
+	})
+	if err != nil {
+		return ByteView{}, err
 	}
-	// 获取本地数据
-	return g.getLocally(key)
+	return val.(ByteView), nil
 }
 
 // getLocally 获取本地数据
